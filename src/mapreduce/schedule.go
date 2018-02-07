@@ -3,6 +3,7 @@ package mapreduce
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
 //
@@ -35,40 +36,40 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	var wg sync.WaitGroup
 	wg.Add(ntasks)
 
-	go func() {
-		task_index := 0
-		var task_index_lock sync.Mutex
+	tasksQueue := make(chan DoTaskArgs, 5)
 
+	// add task to queue
+	go func() {
+		for i := 0; i < ntasks; i++ {
+			var args DoTaskArgs
+			args.JobName = jobName
+			args.TaskNumber = i
+			args.NumOtherPhase = n_other
+			switch phase {
+			case mapPhase:
+				args.File = mapFiles[i]
+				args.Phase = mapPhase
+			case reducePhase:
+				args.Phase = reducePhase
+			}
+			tasksQueue <- args
+		}
+	}()
+
+	// wait workers
+	go func() {
 		for {
 			workerName := <-registerChan
 			debug("get worker %s\n", workerName)
+			// schedule tasks to workers
 			go func(workerName string) {
 				for {
-					index := -1
-					task_index_lock.Lock()
-					if task_index < ntasks {
-						index = task_index
-						task_index++
-					}
-					task_index_lock.Unlock()
-
-					if index == -1 {
-						return
-					}
-
-					var args DoTaskArgs
-					args.JobName = jobName
-					args.TaskNumber = index
-					args.NumOtherPhase = n_other
-					switch phase {
-					case mapPhase:
-						args.File = mapFiles[index]
-						args.Phase = mapPhase
-					case reducePhase:
-						args.Phase = reducePhase
-					}
+					args := <-tasksQueue
 					if !call(workerName, "Worker.DoTask", args, nil) {
-						panic("call " + workerName + " failed")
+						fmt.Printf("call %s(%v) failed\n", workerName, args)
+						tasksQueue <- args
+						time.Sleep(500 * time.Millisecond)
+						continue
 					}
 					wg.Done()
 				}
