@@ -12,7 +12,7 @@ import (
 
 // Master holds all the state that the master needs to keep track of.
 type Master struct {
-	mu sync.Mutex
+	sync.Mutex
 
 	address     string
 	doneChannel chan bool
@@ -34,8 +34,8 @@ type Master struct {
 // Register is an RPC method that is called by workers after they have started
 // up to report that they are ready to receive tasks.
 func (mr *Master) Register(args *RegisterArgs, _ *struct{}) error {
-	mr.lock()
-	defer mr.unlock()
+	mr.Lock()
+	defer mr.Unlock()
 	debug("Register: worker %s\n", args.Worker)
 	mr.workers = append(mr.workers, args.Worker)
 
@@ -50,7 +50,7 @@ func newMaster(master string) (mr *Master) {
 	mr = new(Master)
 	mr.address = master
 	mr.shutdown = make(chan struct{})
-	mr.newCond = sync.NewCond(&mr.mu)
+	mr.newCond = sync.NewCond(mr)
 	mr.doneChannel = make(chan bool)
 	return
 }
@@ -85,7 +85,7 @@ func Sequential(jobName string, files []string, nreduce int,
 func (mr *Master) forwardRegistrations(ch chan string) {
 	i := 0
 	for {
-		mr.lock()
+		mr.Lock()
 		if len(mr.workers) > i {
 			// there's a worker that we haven't told schedule() about.
 			w := mr.workers[i]
@@ -96,7 +96,7 @@ func (mr *Master) forwardRegistrations(ch chan string) {
 			// in response to an RPC from a new worker.
 			mr.newCond.Wait()
 		}
-		mr.unlock()
+		mr.Unlock()
 	}
 }
 
@@ -152,15 +152,15 @@ func (mr *Master) run(jobName string, files []string, nreduce int,
 // Wait blocks until the currently scheduled work has completed.
 // This happens when all tasks have scheduled and completed, the final output
 // have been computed, and all workers have been shut down.
-func (mr *Master) wait() {
+func (mr *Master) Wait() {
 	<-mr.doneChannel
 }
 
 // killWorkers cleans up all workers by sending each one a Shutdown RPC.
 // It also collects and returns the number of tasks each worker has performed.
 func (mr *Master) killWorkers() []int {
-	mr.lock()
-	defer mr.unlock()
+	mr.Lock()
+	defer mr.Unlock()
 	ntasks := make([]int, 0, len(mr.workers))
 	for _, w := range mr.workers {
 		debug("Master: shutdown worker %s\n", w)
@@ -173,12 +173,4 @@ func (mr *Master) killWorkers() []int {
 		}
 	}
 	return ntasks
-}
-
-func (mr *Master) lock() {
-	mr.mu.Lock()
-}
-
-func (mr *Master) unlock() {
-	mr.mu.Unlock()
 }

@@ -6,11 +6,11 @@ echo ""
 echo "==> Part I"
 go test -run Sequential mapreduce/...
 echo ""
-echo "==> Part II"
+echo "==> Part II (word count)"
 (cd "$here" && sh ./test-wc.sh > /dev/null)
 echo ""
 echo "==> Part III"
-go test -run TestBasic mapreduce/...
+go test -run Parallel mapreduce/...
 echo ""
 echo "==> Part IV"
 go test -run Failure mapreduce/...
