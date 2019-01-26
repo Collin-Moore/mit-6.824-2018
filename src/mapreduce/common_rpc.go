@@ -52,8 +52,7 @@ func call(srv string, rpcname string,
 	args interface{}, reply interface{}) bool {
 	c, err := rpc.Dial("tcp", srv)
 	if err != nil {
-		fmt.Println(err)
-		return false
+		panic(err)
 	}
 	defer c.Close()
 
