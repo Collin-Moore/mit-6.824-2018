@@ -116,15 +116,17 @@ func makeInputs(num int) []string {
 	return names
 }
 
-var tcp_port int = 8000
-
 // Cook up a unique-ish UNIX-domain socket name
 // in /var/tmp. can't use current directory since
 // AFS doesn't support UNIX-domain sockets.
 func port(suffix string) string {
-	address := fmt.Sprintf(":%d", tcp_port)
-	tcp_port++
-	return address
+	s := "/var/tmp/824-"
+	s += strconv.Itoa(os.Getuid()) + "/"
+	os.Mkdir(s, 0777)
+	s += "mr"
+	s += strconv.Itoa(os.Getpid()) + "-"
+	s += suffix
+	return s
 }
 
 func setup() *Master {
