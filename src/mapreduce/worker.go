@@ -22,7 +22,7 @@ type Parallelism struct {
 
 // Worker holds the state for a server waiting for DoTask or Shutdown RPCs
 type Worker struct {
-	sync.Mutex
+	mu sync.Mutex
 
 	name        string
 	Map         func(string, string) []KeyValue
@@ -40,11 +40,11 @@ func (wk *Worker) DoTask(arg *DoTaskArgs, _ *struct{}) error {
 	fmt.Printf("%s: given %v task #%d on file %s (nios: %d)\n",
 		wk.name, arg.Phase, arg.TaskNumber, arg.File, arg.NumOtherPhase)
 
-	wk.Lock()
+	wk.lock()
 	wk.nTasks += 1
 	wk.concurrent += 1
 	nc := wk.concurrent
-	wk.Unlock()
+	wk.unlock()
 
 	if nc > 1 {
 		// schedule() should never issue more than one RPC at a
@@ -78,9 +78,9 @@ func (wk *Worker) DoTask(arg *DoTaskArgs, _ *struct{}) error {
 		doReduce(arg.JobName, arg.TaskNumber, mergeName(arg.JobName, arg.TaskNumber), arg.NumOtherPhase, wk.Reduce)
 	}
 
-	wk.Lock()
+	wk.lock()
 	wk.concurrent -= 1
-	wk.Unlock()
+	wk.unlock()
 
 	if wk.parallelism != nil {
 		wk.parallelism.mu.Lock()
@@ -96,8 +96,8 @@ func (wk *Worker) DoTask(arg *DoTaskArgs, _ *struct{}) error {
 // We should respond with the number of tasks we have processed.
 func (wk *Worker) Shutdown(_ *struct{}, res *ShutdownReply) error {
 	debug("Shutdown %s\n", wk.name)
-	wk.Lock()
-	defer wk.Unlock()
+	wk.lock()
+	defer wk.unlock()
 	res.Ntasks = wk.nTasks
 	wk.nRPC = 1
 	return nil
@@ -138,17 +138,17 @@ func RunWorker(MasterAddress string, me string,
 
 	// DON'T MODIFY CODE BELOW
 	for {
-		wk.Lock()
+		wk.lock()
 		if wk.nRPC == 0 {
-			wk.Unlock()
+			wk.unlock()
 			break
 		}
-		wk.Unlock()
+		wk.unlock()
 		conn, err := wk.l.Accept()
 		if err == nil {
-			wk.Lock()
+			wk.lock()
 			wk.nRPC--
-			wk.Unlock()
+			wk.unlock()
 			go rpcs.ServeConn(conn)
 		} else {
 			break
@@ -156,4 +156,12 @@ func RunWorker(MasterAddress string, me string,
 	}
 	wk.l.Close()
 	debug("RunWorker %s exit\n", me)
+}
+
+func (wk *Worker) lock() {
+	wk.mu.Lock()
+}
+
+func (wk *Worker) unlock() {
+	wk.mu.Unlock()
 }
