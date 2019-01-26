@@ -22,7 +22,6 @@ import (
 	"math/rand"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -78,9 +77,8 @@ type Raft struct {
 	nextIndex  []int
 	matchIndex []int
 
-	isNeedElectLeader bool
-	exitChan          chan bool
-	stateChangeChan   chan bool
+	isNeedelectLeader bool
+	isNeedExit        bool
 	applyCh           chan ApplyMsg
 
 	wg sync.WaitGroup
@@ -178,6 +176,15 @@ type AppendEntriesReply struct {
 	Success bool
 }
 
+func findLog(logs []LogEntry, index, term int) int {
+	for i := len(logs) - 1; i >= 0; i-- {
+		if logs[i].Index == index && logs[i].Term == term {
+			return i
+		}
+	}
+	return -1
+}
+
 func (rf *Raft) updateLog(preIndex, preTerm int, logs []LogEntry) bool {
 	if preIndex > len(rf.log)-1 || rf.log[preIndex].Index != preIndex || rf.log[preIndex].Term != preTerm {
 		return false
@@ -188,17 +195,6 @@ func (rf *Raft) updateLog(preIndex, preTerm int, logs []LogEntry) bool {
 	return true
 }
 
-func (rf *Raft) followerApplyLog(leaderCommitIndex int) {
-	if leaderCommitIndex > rf.commitIndex {
-		targetIndex := Min(leaderCommitIndex, len(rf.log)-1)
-		for i := rf.commitIndex + 1; i <= targetIndex; i++ {
-			DPrintf("%d: follower apply msg, %d/%d, logs: %v", rf.me, i, len(rf.log), rf.log)
-			rf.applyCh <- ApplyMsg{CommandValid: true, Command: rf.log[i].Command, CommandIndex: rf.log[i].Index}
-			rf.commitIndex++
-		}
-	}
-}
-
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, replay *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
@@ -207,26 +203,28 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, replay *AppendEntriesRepl
 	replay.Success = false
 
 	if args.Term >= rf.currentTerm {
-		DPrintf("%d: append from %d, term: %d<-%d, preindex:%d, preterm: %d, logs: %v/%v", rf.me, args.LeaderId, rf.currentTerm, args.Term, args.PrevLogIndex, args.PrevLogTerm, rf.log, args.Entries)
+		DPrintf("%d: append from %d, preindex:%d, preterm: %d, logs: %v/%v", rf.me, args.LeaderId, args.PrevLogIndex, args.PrevLogTerm, rf.log, args.Entries)
 		rf.votedFor = args.LeaderId
 		rf.state = RAFT_STATE_FOLLOWER
 		rf.currentTerm = args.Term
-		rf.isNeedElectLeader = false
-
-		if args.Term > rf.currentTerm {
-			rf.stateChangeChan <- true
-		}
+		rf.isNeedelectLeader = false
 
 		if len(args.Entries) == 0 {
-			if rf.log[len(rf.log)-1].Index == args.PrevLogIndex && rf.log[len(rf.log)-1].Term == args.PrevLogTerm {
+			if rf.log[len(rf.log)-1].Index == args.PrevLogIndex || rf.log[len(rf.log)-1].Term == args.PrevLogTerm {
 				replay.Success = true
-				rf.followerApplyLog(args.LeaderCommit)
 			}
 		} else {
 			if rf.updateLog(args.PrevLogIndex, args.PrevLogTerm, args.Entries) {
 				replay.Success = true
-				rf.followerApplyLog(args.LeaderCommit)
 			}
+		}
+
+		if args.LeaderCommit > rf.commitIndex && rf.commitIndex < len(rf.log)-1 {
+			for i := rf.commitIndex + 1; i < len(rf.log); i++ {
+				DPrintf("%d: follower apply msg, %d/%d, logs: %v", rf.me, i, len(rf.log), rf.log)
+				rf.applyCh <- ApplyMsg{CommandValid: true, Command: rf.log[i].Command, CommandIndex: rf.log[i].Index}
+			}
+			rf.commitIndex = len(rf.log) - 1
 		}
 	}
 }
@@ -256,23 +254,15 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	reply.VoteGranted = false
 
 	if args.Term > rf.currentTerm {
-		rf.currentTerm = args.Term
-		rf.state = RAFT_STATE_FOLLOWER
-		rf.stateChangeChan <- true
-
 		if cmpLog(LogEntry{Index: args.LastLogIndex, Term: args.LastLogTerm}, rf.log[len(rf.log)-1]) {
+			rf.currentTerm = args.Term
+			rf.state = RAFT_STATE_FOLLOWER
 			rf.votedFor = args.CandidateId
-			rf.isNeedElectLeader = false
-			reply.Term = rf.currentTerm
+
+			rf.isNeedelectLeader = false
+
 			reply.VoteGranted = true
-		} else {
-			reply.Term = rf.currentTerm
-			reply.VoteGranted = false
 		}
-	} else if args.Term == rf.currentTerm && rf.votedFor == args.CandidateId {
-		rf.isNeedElectLeader = false
-		reply.Term = rf.currentTerm
-		reply.VoteGranted = true
 	}
 }
 
@@ -348,11 +338,9 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 //
 func (rf *Raft) Kill() {
 	// Your code here, if desired.
-	rf.exitChan <- true
+	rf.isNeedExit = true
 	rf.wg.Wait()
-	rf.mu.Lock()
 	DPrintf("%d: be killed, term %d", rf.me, rf.currentTerm)
-	rf.mu.Unlock()
 }
 
 func (rf *Raft) electLeader() {
@@ -360,7 +348,7 @@ func (rf *Raft) electLeader() {
 	args := &RequestVoteArgs{Term: rf.currentTerm, CandidateId: rf.me,
 		LastLogIndex: rf.log[len(rf.log)-1].Index, LastLogTerm: rf.log[len(rf.log)-1].Term}
 
-	var voteCount int32 = 1
+	electChan := make(chan bool, len(rf.peers)-1)
 
 	for i, _ := range rf.peers {
 		if i == rf.me {
@@ -371,33 +359,45 @@ func (rf *Raft) electLeader() {
 			reply := &RequestVoteReply{}
 			if rf.sendRequestVote(i, args, reply) {
 				if reply.VoteGranted {
-					atomic.AddInt32(&voteCount, 1)
-					rf.mu.Lock()
-					if atomic.LoadInt32(&voteCount) > int32(len(rf.peers)/2) && args.Term == rf.currentTerm && rf.state == RAFT_STATE_CANDIDATE {
-						rf.state = RAFT_STATE_LEADER
-						rf.nextIndex = make([]int, len(rf.peers))
-						for i := 0; i < len(rf.peers); i++ {
-							rf.nextIndex[i] = len(rf.log)
-						}
-						DPrintf("%d: become leader, term %d", rf.me, rf.currentTerm)
-						rf.stateChangeChan <- true
-					}
-					rf.mu.Unlock()
+					electChan <- true
 				} else {
 					rf.mu.Lock()
-					if reply.Term > rf.currentTerm && args.Term == rf.currentTerm && rf.state == RAFT_STATE_CANDIDATE {
+					if reply.Term > rf.currentTerm {
 						rf.state = RAFT_STATE_FOLLOWER
-						rf.isNeedElectLeader = false
-						rf.stateChangeChan <- true
+						rf.isNeedelectLeader = false
 					}
 					rf.mu.Unlock()
 				}
 			}
 		}(i)
 	}
+
+	go func() {
+		count := 1
+		start := time.Now()
+		for time.Since(start) <= 1000*time.Millisecond {
+			<-electChan
+			count++
+			if count > len(rf.peers)/2 {
+				break
+			}
+		}
+
+		rf.mu.Lock()
+		defer rf.mu.Unlock()
+
+		if count > len(rf.peers)/2 && args.Term == rf.currentTerm {
+			rf.state = RAFT_STATE_LEADER
+			rf.nextIndex = make([]int, len(rf.peers))
+			for i := 0; i < len(rf.peers); i++ {
+				rf.nextIndex[i] = len(rf.log)
+			}
+			DPrintf("%d: become leader, term %d", rf.me, rf.currentTerm)
+		}
+	}()
 }
 
-func (rf *Raft) commitLogs(i int, logs []LogEntry) {
+func (rf *Raft) updateCommitIndex(i int, logs []LogEntry) {
 	rf.nextIndex[rf.me] = len(rf.log)
 
 	commitIndexs := make([]int, len(rf.nextIndex))
@@ -426,22 +426,18 @@ func (rf *Raft) keepLeader() {
 		reply := &AppendEntriesReply{}
 
 		go func(i int) {
-			if rf.sendAppendEntries(i, args, reply) {
+			ok := rf.sendAppendEntries(i, args, reply)
+
+			if ok {
 				rf.mu.Lock()
 				defer rf.mu.Unlock()
 				if reply.Success {
 					if args.Term == rf.currentTerm && args.Entries != nil {
 						rf.nextIndex[i] += len(args.Entries)
-						rf.commitLogs(i, args.Entries)
+						rf.updateCommitIndex(i, args.Entries)
 					}
 				} else {
-					if reply.Term == rf.currentTerm {
-						rf.nextIndex[i] = Max(rf.nextIndex[i]/2, 1)
-					} else {
-						rf.state = RAFT_STATE_FOLLOWER
-						rf.isNeedElectLeader = false
-						rf.stateChangeChan <- true
-					}
+					rf.nextIndex[i] = rf.nextIndex[i]/2 + 1
 				}
 			}
 		}(i)
@@ -454,31 +450,22 @@ func (rf *Raft) schedule() {
 	case RAFT_STATE_LEADER:
 		rf.keepLeader()
 		rf.mu.Unlock()
-		select {
-		case <-time.After(100 * time.Millisecond):
-		case <-rf.stateChangeChan:
-		}
-	case RAFT_STATE_FOLLOWER:
-		rf.isNeedElectLeader = true
-		rf.mu.Unlock()
-		select {
-		case <-time.After(time.Duration(500+rand.Intn(500)) * time.Millisecond):
-		case <-rf.stateChangeChan:
-		}
-		rf.mu.Lock()
-		if rf.isNeedElectLeader && rf.state == RAFT_STATE_FOLLOWER {
-			rf.state = RAFT_STATE_CANDIDATE
-		}
-		rf.mu.Unlock()
+		time.Sleep(300 * time.Millisecond)
 	case RAFT_STATE_CANDIDATE:
-		rf.votedFor = rf.me
+		rf.votedFor = -1
 		rf.currentTerm++
 		rf.electLeader()
 		rf.mu.Unlock()
-		select {
-		case <-time.After(time.Duration(500+rand.Intn(500)) * time.Millisecond):
-		case <-rf.stateChangeChan:
+		time.Sleep(time.Duration(500+rand.Intn(300)) * time.Millisecond)
+	case RAFT_STATE_FOLLOWER:
+		rf.isNeedelectLeader = true
+		rf.mu.Unlock()
+		time.Sleep(time.Duration(500+rand.Intn(300)) * time.Millisecond)
+		rf.mu.Lock()
+		if rf.state == RAFT_STATE_FOLLOWER && rf.isNeedelectLeader {
+			rf.state = RAFT_STATE_CANDIDATE
 		}
+		rf.mu.Unlock()
 	}
 }
 
@@ -506,21 +493,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.applyCh = applyCh
 	rf.log = make([]LogEntry, 1)
 
-	rf.exitChan = make(chan bool)
-	rf.stateChangeChan = make(chan bool, 50)
-
 	rf.wg.Add(1)
 
 	go func() {
-		defer rf.wg.Done()
-		for {
-			select {
-			case <-rf.exitChan:
-				return
-			default:
-				rf.schedule()
-			}
+		for !rf.isNeedExit {
+			rf.schedule()
 		}
+		rf.wg.Done()
 	}()
 
 	// initialize from state persisted before a crash
