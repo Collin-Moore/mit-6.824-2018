@@ -1,4 +1,8 @@
 package mapreduce
+import (
+    "os"
+    "encoder/json"
+)
 
 func doReduce(
 	jobName string, // the name of the whole MapReduce job
@@ -44,4 +48,30 @@ func doReduce(
 	//
 	// Your code here (Part I).
 	//
+    
+    // I think the process is to read all the KeyValue pairs into a map of key:values[]
+    // then write the output of each to the outFile
+
+    keyValMap := make(map[string][]string)
+    // outFile := os.OpenFile("outFile", os.O_CREATE|os.O_WRONLY)
+    for m := 0; m < nMap; m++ {
+        fileName = reduceName(jobName, m, reduceTask) 
+        f, err := os.OpenFile(fileName, os.O_RDONLY)
+        IoCheck(err) 
+        dec := json.NewDecoder(f)
+        while dec.More() {
+            var kv KeyValue
+            err = dec.Decode(&kv)
+            IoCheck(err)
+            keyValMap[kv.Key] = append(keyValMap[kv.Key], kv.Value)
+        }
+        f.close()
+    }
+
+}
+
+func IoCheck(e error) {
+    if e != nil {
+        panic(e)
+    }
 }

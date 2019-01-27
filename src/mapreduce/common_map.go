@@ -4,7 +4,6 @@ import (
 	"hash/fnv"
     "io/ioutil"
     "os"
-    "math"
     "encoding/json"
 )
 
@@ -64,9 +63,9 @@ func doMap(
     keyVals := mapF(inFile, string(dat))
     for _,pair := range keyVals {
         keyHash := ihash(pair.Key)
-        r := math.Mod(float64(keyHash), float64(nReduce))
-        intermedFileName := reduceName(jobName, mapTask, int(r))
-        f, err := os.Create(intermedFileName)
+        r := keyHash % nReduce
+        intermedFileName := reduceName(jobName, mapTask, r)
+        f, err := os.OpenFile(intermedFileName, os.O_CREATE|os.O_APPEND|os.O_WRONLY)
         IoCheck(err) 
         enc := json.NewEncoder(f)
         err = enc.Encode(&pair)
