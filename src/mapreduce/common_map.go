@@ -1,10 +1,11 @@
 package mapreduce
 
 import (
+	"encoding/json"
+	//	"fmt"
 	"hash/fnv"
-    "io/ioutil"
-    "os"
-    "encoding/json"
+	"io/ioutil"
+	"os"
 )
 
 func doMap(
@@ -57,28 +58,29 @@ func doMap(
 	// Your code here (Part I).
 	//
 
-    dat, err := ioutil.ReadFile(inFile)
-    IoCheck(err)
+	dat, err := ioutil.ReadFile(inFile)
+	IoCheck(err)
 
-    keyVals := mapF(inFile, string(dat))
-    for _,pair := range keyVals {
-        keyHash := ihash(pair.Key)
-        r := keyHash % nReduce
-        intermedFileName := reduceName(jobName, mapTask, r)
-        f, err := os.OpenFile(intermedFileName, os.O_CREATE|os.O_APPEND|os.O_WRONLY)
-        IoCheck(err) 
-        enc := json.NewEncoder(f)
-        err = enc.Encode(&pair)
-        IoCheck(err)
-        f.Close()
-    }
-    return
+	keyVals := mapF(inFile, string(dat))
+	for _, pair := range keyVals {
+		//fmt.Println(pair.Value)
+		keyHash := ihash(pair.Key)
+		r := keyHash % nReduce
+		intermedFileName := reduceName(jobName, mapTask, r)
+		f, err := os.OpenFile(intermedFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		IoCheck(err)
+		enc := json.NewEncoder(f)
+		err = enc.Encode(pair)
+		IoCheck(err)
+		f.Close()
+	}
+	return
 }
 
 func IoCheck(e error) {
-    if e != nil {
-        panic(e)
-    }
+	if e != nil {
+		panic(e)
+	}
 }
 
 func ihash(s string) int {

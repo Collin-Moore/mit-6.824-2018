@@ -1,7 +1,8 @@
 package mapreduce
+
 import (
-    "os"
-    "encoder/json"
+	"encoding/json"
+	"os"
 )
 
 func doReduce(
@@ -48,30 +49,30 @@ func doReduce(
 	//
 	// Your code here (Part I).
 	//
-    
-    // I think the process is to read all the KeyValue pairs into a map of key:values[]
-    // then write the output of each to the outFile
 
-    keyValMap := make(map[string][]string)
-    // outFile := os.OpenFile("outFile", os.O_CREATE|os.O_WRONLY)
-    for m := 0; m < nMap; m++ {
-        fileName = reduceName(jobName, m, reduceTask) 
-        f, err := os.OpenFile(fileName, os.O_RDONLY)
-        IoCheck(err) 
-        dec := json.NewDecoder(f)
-        while dec.More() {
-            var kv KeyValue
-            err = dec.Decode(&kv)
-            IoCheck(err)
-            keyValMap[kv.Key] = append(keyValMap[kv.Key], kv.Value)
-        }
-        f.close()
-    }
+	// I think the process is to read all the KeyValue pairs into a map of key:values[]
+	// then write the output of each to the outFile
 
-}
-
-func IoCheck(e error) {
-    if e != nil {
-        panic(e)
-    }
+	keyValMap := make(map[string][]string)
+	out, err_1 := os.Create(outFile)
+	enc := json.NewEncoder(out)
+	for m := 0; m < nMap; m++ {
+		fileName := reduceName(jobName, m, reduceTask)
+		f, err_2 := os.Open(fileName)
+		IoCheck(err_2)
+		dec := json.NewDecoder(f)
+		for dec.More() {
+			var kv KeyValue
+			err_2 = dec.Decode(&kv)
+			IoCheck(err_2)
+			keyValMap[kv.Key] = append(keyValMap[kv.Key], kv.Value)
+		}
+		f.Close()
+	}
+	for k, v := range keyValMap {
+		result := reduceF(k, v)
+		keyVal := KeyValue{k, result}
+		err_1 = enc.Encode(keyVal)
+		IoCheck(err_1)
+	}
 }
