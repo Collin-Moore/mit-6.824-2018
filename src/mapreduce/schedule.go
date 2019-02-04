@@ -45,7 +45,8 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	processChan := make(chan int)
 	var wg sync.WaitGroup
 
-	handleWorker := func(rpcaddr string) {
+	handleWorker := func(rpcaddr string, wg *sync.WaitGroup) {
+		fmt.Println("Handler created for: ", rpcaddr)
 		defer wg.Done()
 		for j := range processChan {
 			args := DoTaskArgs{jobName, mapFiles[j], phase, j, n_other}
@@ -54,15 +55,24 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 				break
 			}
 		}
+		fmt.Println("Handler finished for: ", rpcaddr)
+		return
 	}
 
+	go func(registerChan chan string) {
+		for r := range registerChan {
+			wg.Add(1)
+			go handleWorker(r, &wg)
+		}
+	}(registerChan)
+
+	fmt.Printf("Loading up processChan with %d tasks\n", ntasks)
 	for i := 0; i < ntasks; i++ {
-		taskChannel <- i // could cause a bug if sharing same `i`
+		i := i
+		processChan <- i // could cause a bug if sharing same `i`
 	}
-	for r := range registerChan {
-		wg.Add(1)
-		go handleWorker(r)
-	}
+	close(processChan)
+	fmt.Println("Finished loading processChan")
 	wg.Wait()
 	fmt.Printf("Schedule: %v done\n", phase)
 }
