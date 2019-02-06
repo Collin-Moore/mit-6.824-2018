@@ -1,0 +1,41 @@
+2019/02/05 20:52:50 rpc.Register: method "CleanupFiles" has 1 input parameters; needs exactly three
+2019/02/05 20:52:50 rpc.Register: method "Lock" has 1 input parameters; needs exactly three
+2019/02/05 20:52:50 rpc.Register: method "Unlock" has 1 input parameters; needs exactly three
+2019/02/05 20:52:50 rpc.Register: method "Wait" has 1 input parameters; needs exactly three
+RunWorker /var/tmp/824-1000/mr20438-worker1
+/var/tmp/824-1000/mr20438-master: Starting Map/Reduce task test
+2019/02/05 20:52:50 rpc.Register: method "Lock" has 1 input parameters; needs exactly three
+2019/02/05 20:52:50 rpc.Register: method "Unlock" has 1 input parameters; needs exactly three
+Schedule: 20 mapPhase tasks (10 I/Os)
+RunWorker /var/tmp/824-1000/mr20438-worker0
+Schedule: mapPhase done
+Schedule: 10 reducePhase tasks (20 I/Os)
+Schedule: reducePhase done
+2019/02/05 20:52:50 rpc.Register: method "Lock" has 1 input parameters; needs exactly three
+2019/02/05 20:52:50 rpc.Register: method "Unlock" has 1 input parameters; needs exactly three
+loading initial job:  0
+starting success job
+loading initial job:  0
+starting success job
+Register: worker /var/tmp/824-1000/mr20438-worker1
+Handler created for:  /var/tmp/824-1000/mr20438-worker1
+Shutdown: registration server
+Starting reducePhaseJob 0 on worker /var/tmp/824-1000/mr20438-worker1
+Handler created for:  /var/tmp/824-1000/mr20438-worker1
+Starting mapPhaseJob 0 on worker /var/tmp/824-1000/mr20438-worker1
+RegistrationServer: accept error: accept unix /var/tmp/824-1000/mr20438-master: use of closed network connectionRegistrationServer: done
+loading initial job:  1
+Register: worker /var/tmp/824-1000/mr20438-worker0
+Handler created for:  /var/tmp/824-1000/mr20438-worker0
+Starting mapPhaseJob 1 on worker /var/tmp/824-1000/mr20438-worker0
+loading initial job:  1
+loading initial job:  2
+Handler created for:  /var/tmp/824-1000/mr20438-worker0
+Starting reducePhaseJob 1 on worker /var/tmp/824-1000/mr20438-worker0
+cleanupRegistration: done
+Merge phaseMerge: read mrtmp.test-res-0
+loading initial job:  2
+Merge: read mrtmp.test-res-1
+2019/02/05 20:52:50 Merge: open mrtmp.test-res-1: no such file or directory
+exit status 1
+FAIL	mapreduce	0.018s
