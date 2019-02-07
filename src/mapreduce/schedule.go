@@ -43,6 +43,8 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	// okay, I can read from a single channel in multiple go routines, thats good
 
 	processChan := make(chan int)
+	completeChan := make(chan int)
+	failChan := make(chan int)
 	var wg sync.WaitGroup
 
 	handleWorker := func(rpcaddr string, wg *sync.WaitGroup) {
@@ -52,7 +54,9 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 			args := DoTaskArgs{jobName, mapFiles[j], phase, j, n_other}
 			result := call(rpcaddr, "Worker.DoTask", args, nil)
 			if !result {
-				break
+				//break
+			} else {
+				completeChan <- j
 			}
 		}
 		fmt.Println("Handler finished for: ", rpcaddr)
@@ -66,12 +70,41 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 		}
 	}(registerChan)
 
-	fmt.Printf("Loading up processChan with %d tasks\n", ntasks)
-	for i := 0; i < ntasks; i++ {
-		i := i
-		processChan <- i // could cause a bug if sharing same `i`
+	go func(processChan chan int) {
+		for i := 0; i < ntasks; i++ {
+			i := i
+			processChan <- i
+		}
+	}(processChan)
+
+	go func(failChan chan int, processChan chan int) {
+		for fail := range failChan {
+			processChan <- fail
+		}
+	}(failChan, processChan)
+
+	count := 0
+	completeMap := make(map[int]bool)
+	fmt.Printf("starting checks for completion\n")
+	for count < ntasks {
+		job := <-completeChan
+		_, ok := completeMap[job]
+		if !ok {
+			completeMap[job] = true
+			count++
+		}
 	}
+	fmt.Printf("finished all tasks\n")
+	close(failChan)
 	close(processChan)
+
+	// fmt.Printf("Loading up processChan with %d tasks\n", ntasks)
+	// for i := 0; i < ntasks; i++ {
+	// i := i
+	// processChan <- i // could cause a bug if sharing same `i`
+	// }
+
+	// close(processChan)
 	fmt.Println("Finished loading processChan")
 	wg.Wait()
 	fmt.Printf("Schedule: %v done\n", phase)
