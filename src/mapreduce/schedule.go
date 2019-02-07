@@ -44,7 +44,7 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 
 	processChan := make(chan int)
 	completeChan := make(chan int)
-	failChan := make(chan int)
+	failChan := make(chan int, 100) // I have no idea how many the max number of workers can be
 	var wg sync.WaitGroup
 
 	handleWorker := func(rpcaddr string, wg *sync.WaitGroup) {
@@ -54,7 +54,8 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 			args := DoTaskArgs{jobName, mapFiles[j], phase, j, n_other}
 			result := call(rpcaddr, "Worker.DoTask", args, nil)
 			if !result {
-				//break
+				failChan <- j
+				break
 			} else {
 				completeChan <- j
 			}
@@ -74,12 +75,15 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 		for i := 0; i < ntasks; i++ {
 			i := i
 			processChan <- i
+			fmt.Printf("Job %d scheduled\n", i)
 		}
 	}(processChan)
 
 	go func(failChan chan int, processChan chan int) {
 		for fail := range failChan {
+			fmt.Printf("Job %d failed\n", fail)
 			processChan <- fail
+			fmt.Printf("Job %d rescheduled\n", fail)
 		}
 	}(failChan, processChan)
 
