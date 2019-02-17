@@ -102,13 +102,6 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	close(failChan)
 	close(processChan)
 
-	// fmt.Printf("Loading up processChan with %d tasks\n", ntasks)
-	// for i := 0; i < ntasks; i++ {
-	// i := i
-	// processChan <- i // could cause a bug if sharing same `i`
-	// }
-
-	// close(processChan)
 	fmt.Println("Finished loading processChan")
 	wg.Wait()
 	fmt.Printf("Schedule: %v done\n", phase)
