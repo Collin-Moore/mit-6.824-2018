@@ -4,6 +4,8 @@ import "os"
 import "fmt"
 import "mapreduce"
 import "sort"
+import "strings"
+import "unicode"
 
 // The mapping function is called once for each piece of the input.
 // In this framework, the key is the name of the file that is being processed,
@@ -18,7 +20,7 @@ func mapF(document string, value string) (res []mapreduce.KeyValue) {
 	splitStrings := strings.FieldsFunc(value, SplitWord)
 	keyVals := make([]mapreduce.KeyValue, len(splitStrings))
 	for i, word := range splitStrings {
-		keyVals[i] = mapreduce.KeyValue{word, document}
+		keyVals[i] = mapreduce.KeyValue{strings.ToLower(word), document}
 	}
 	return keyVals
 }
@@ -41,7 +43,8 @@ func reduceF(key string, values []string) string {
 			}
 		}
 	}
-	return temp
+	result := fmt.Sprintf("%d %s", len(temp), strings.Join(temp, ","))
+	return result
 }
 
 // Can be run in 3 ways:
