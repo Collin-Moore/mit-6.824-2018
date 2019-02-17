@@ -3,6 +3,7 @@ package main
 import "os"
 import "fmt"
 import "mapreduce"
+import "sort"
 
 // The mapping function is called once for each piece of the input.
 // In this framework, the key is the name of the file that is being processed,
@@ -27,6 +28,20 @@ func mapF(document string, value string) (res []mapreduce.KeyValue) {
 // should be a single output value for that key.
 func reduceF(key string, values []string) string {
 	// Your code here (Part V).
+	sort.Strings(values)
+	// zero length slice on existing array to avoid allocating new underlying array
+	temp := values[:0]
+	if len(values) > 0 {
+		prev := values[0]
+		temp = append(temp, prev)
+		for i := 1; i < len(values); i++ {
+			if prev != values[i] {
+				temp = append(temp, values[i])
+				prev = values[i]
+			}
+		}
+	}
+	return temp
 }
 
 // Can be run in 3 ways:
